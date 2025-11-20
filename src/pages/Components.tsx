@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import toast from 'react-hot-toast';
 import { Copy, Check, X } from 'lucide-react';
 import { allComponents, componentCategories } from '../components/library';
 
@@ -17,6 +18,7 @@ const Components: React.FC = () => {
   const handleCopyCode = () => {
     navigator.clipboard.writeText(selectedCode);
     setIsCopied(true);
+    toast.success('Code copied to clipboard!');
     setTimeout(() => setIsCopied(false), 2000);
   };
 

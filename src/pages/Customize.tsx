@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import toast from 'react-hot-toast';
 import {
   DndContext,
   closestCenter,
@@ -24,6 +25,9 @@ interface PageComponent {
   category: string;
   code: string;
   element: React.ReactNode;
+  isContainer?: boolean;
+  containerType?: 'flex-row' | 'flex-col' | 'grid-2' | 'grid-3' | 'grid-4';
+  children?: PageComponent[];
   customProps: {
     bgColor?: string;
     textColor?: string;
@@ -47,6 +51,11 @@ interface PageComponent {
     alignment?: 'left' | 'center' | 'right' | 'justify';
     // Display
     display?: string;
+    // Container properties
+    gap?: string;
+    justify?: 'start' | 'center' | 'end' | 'between' | 'around' | 'evenly';
+    alignItems?: 'start' | 'center' | 'end' | 'stretch';
+    flexWrap?: 'wrap' | 'nowrap';
   };
 }
 
@@ -56,9 +65,12 @@ interface SortableItemProps {
   onRemove: (id: string) => void;
   onSelect: (id: string) => void;
   isSelected: boolean;
+  onToggleSelect: (id: string) => void;
+  isMultiSelected: boolean;
+  selectedComponentId: string | null;
 }
 
-const SortableItem: React.FC<SortableItemProps> = ({ id, component, onRemove, onSelect, isSelected }) => {
+const SortableItem: React.FC<SortableItemProps> = ({ id, component, onRemove, onSelect, isSelected, onToggleSelect, isMultiSelected, selectedComponentId }) => {
   const {
     attributes,
     listeners,
@@ -80,14 +92,30 @@ const SortableItem: React.FC<SortableItemProps> = ({ id, component, onRemove, on
       ref={setNodeRef}
       style={style}
       className={`relative group bg-white dark:bg-slate-900 rounded-lg p-4 cursor-pointer transition-all w-full ${
-        isSelected ? 'ring-2 ring-blue-500 shadow-lg' : 'border-2 border-gray-200 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-500'
+        isMultiSelected ? 'ring-2 ring-purple-500 shadow-lg' :
+        isSelected ? 'ring-2 ring-blue-500 shadow-lg' :
+        'border-2 border-gray-200 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-500'
       }`}
     >
+      {/* Multi-Select Checkbox */}
+      <div className="absolute left-2 top-2 z-20">
+        <input
+          type="checkbox"
+          checked={isMultiSelected}
+          onChange={(e) => {
+            e.stopPropagation();
+            onToggleSelect(id);
+          }}
+          className="w-5 h-5 rounded border-2 border-gray-300 dark:border-gray-600 text-purple-600 focus:ring-2 focus:ring-purple-500 cursor-pointer"
+          title="Select for grouping"
+        />
+      </div>
+
       {/* Drag Handle */}
       <button
         {...attributes}
         {...listeners}
-        className="absolute left-2 top-2 cursor-grab active:cursor-grabbing bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 rounded p-2.5 transition-colors z-20 touch-none"
+        className="absolute left-12 top-2 cursor-grab active:cursor-grabbing bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 rounded p-2.5 transition-colors z-20 touch-none"
         title="Drag to reorder"
         type="button"
       >
@@ -129,7 +157,74 @@ const SortableItem: React.FC<SortableItemProps> = ({ id, component, onRemove, on
           marginLeft: component.customProps.marginLeft || '0',
         }}
       >
-        {React.isValidElement(component.element) ? (() => {
+        {component.isContainer ? (
+          // Render Container with Tailwind classes
+          <div
+            className={`
+              ${component.containerType === 'flex-row' ? 'flex flex-row' : ''}
+              ${component.containerType === 'flex-col' ? 'flex flex-col' : ''}
+              ${component.containerType === 'grid-2' ? 'grid grid-cols-2' : ''}
+              ${component.containerType === 'grid-3' ? 'grid grid-cols-3' : ''}
+              ${component.containerType === 'grid-4' ? 'grid grid-cols-4' : ''}
+              ${component.customProps.gap ? `gap-${component.customProps.gap}` : 'gap-4'}
+              ${component.customProps.justify ? `justify-${component.customProps.justify}` : ''}
+              ${component.customProps.alignItems ? `items-${component.customProps.alignItems}` : ''}
+              ${component.customProps.flexWrap === 'wrap' ? 'flex-wrap' : ''}
+              p-4 border-4 border-dashed border-purple-300 dark:border-purple-600 rounded-lg bg-purple-50/50 dark:bg-purple-900/20 min-h-[100px]
+            `.trim()}
+            style={{
+              backgroundColor: component.customProps.bgColor,
+              paddingTop: component.customProps.paddingTop,
+              paddingRight: component.customProps.paddingRight,
+              paddingBottom: component.customProps.paddingBottom,
+              paddingLeft: component.customProps.paddingLeft,
+            }}
+          >
+            {component.children && component.children.length > 0 ? (
+              component.children.map((child) => (
+                <div
+                  key={child.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelect(child.id);
+                  }}
+                  className={`flex-shrink-0 cursor-pointer p-2 rounded transition-all ${
+                    isSelected && selectedComponentId === child.id
+                      ? 'ring-2 ring-green-500 bg-green-50 dark:bg-green-900/20'
+                      : 'hover:ring-2 hover:ring-blue-300 dark:hover:ring-blue-600'
+                  }`}
+                  title="Click to customize this component"
+                >
+                  {React.isValidElement(child.element) ? (() => {
+                    const elem = child.element as React.ReactElement<any>;
+                    const existingStyle = typeof elem.props?.style === 'object' ? elem.props.style : {};
+
+                    return React.cloneElement(elem, {
+                      style: {
+                        ...existingStyle,
+                        backgroundColor: child.customProps.bgColor || existingStyle?.backgroundColor,
+                        color: child.customProps.textColor || existingStyle?.color,
+                        borderColor: child.customProps.borderColor || existingStyle?.borderColor,
+                        width: child.customProps.width || existingStyle?.width,
+                        height: child.customProps.height || existingStyle?.height,
+                        paddingTop: child.customProps.paddingTop && child.customProps.paddingTop !== '0' ? child.customProps.paddingTop : existingStyle?.paddingTop,
+                        paddingRight: child.customProps.paddingRight && child.customProps.paddingRight !== '0' ? child.customProps.paddingRight : existingStyle?.paddingRight,
+                        paddingBottom: child.customProps.paddingBottom && child.customProps.paddingBottom !== '0' ? child.customProps.paddingBottom : existingStyle?.paddingBottom,
+                        paddingLeft: child.customProps.paddingLeft && child.customProps.paddingLeft !== '0' ? child.customProps.paddingLeft : existingStyle?.paddingLeft,
+                      }
+                    });
+                  })() : child.element}
+                </div>
+              ))
+            ) : (
+              <div className="text-center text-gray-400 dark:text-gray-500 text-sm py-8">
+                Container ({component.type}) - No components inside
+              </div>
+            )}
+          </div>
+        ) : (
+          // Render regular component
+          React.isValidElement(component.element) ? (() => {
             const elem = component.element as React.ReactElement<any>;
             const existingStyle = typeof elem.props?.style === 'object' ? elem.props.style : {};
 
@@ -152,7 +247,8 @@ const SortableItem: React.FC<SortableItemProps> = ({ id, component, onRemove, on
                 paddingLeft: component.customProps.paddingLeft && component.customProps.paddingLeft !== '0' ? component.customProps.paddingLeft : existingStyle?.paddingLeft,
               }
             });
-          })() : component.element}
+          })() : component.element
+        )}
       </div>
     </div>
   );
@@ -162,6 +258,7 @@ const Customize: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [pageComponents, setPageComponents] = useState<PageComponent[]>([]);
   const [selectedComponentId, setSelectedComponentId] = useState<string | null>(null);
+  const [selectedComponentIds, setSelectedComponentIds] = useState<string[]>([]);
   const [showCode, setShowCode] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [useSemanticHTML, setUseSemanticHTML] = useState(false);
@@ -205,14 +302,89 @@ const Customize: React.FC = () => {
   };
 
   const updateComponentProps = (id: string, props: Partial<PageComponent['customProps']>) => {
-    setPageComponents(pageComponents.map(comp =>
-      comp.id === id
-        ? { ...comp, customProps: { ...comp.customProps, ...props } }
-        : comp
-    ));
+    setPageComponents(pageComponents.map(comp => {
+      // Update top-level component
+      if (comp.id === id) {
+        return { ...comp, customProps: { ...comp.customProps, ...props } };
+      }
+      // Update child inside container
+      if (comp.isContainer && comp.children) {
+        const updatedChildren = comp.children.map(child =>
+          child.id === id
+            ? { ...child, customProps: { ...child.customProps, ...props } }
+            : child
+        );
+        if (updatedChildren !== comp.children) {
+          return { ...comp, children: updatedChildren };
+        }
+      }
+      return comp;
+    }));
   };
 
-  const selectedComponent = pageComponents.find(c => c.id === selectedComponentId);
+  const findComponent = (id: string): PageComponent | undefined => {
+    // Check top-level components
+    const topLevel = pageComponents.find(c => c.id === id);
+    if (topLevel) return topLevel;
+
+    // Check inside containers
+    for (const comp of pageComponents) {
+      if (comp.isContainer && comp.children) {
+        const child = comp.children.find(c => c.id === id);
+        if (child) return child;
+      }
+    }
+    return undefined;
+  };
+
+  const toggleComponentSelection = (id: string) => {
+    setSelectedComponentIds(prev =>
+      prev.includes(id) ? prev.filter(cid => cid !== id) : [...prev, id]
+    );
+  };
+
+  const groupComponents = (containerType: 'flex-row' | 'flex-col' | 'grid-2' | 'grid-3' | 'grid-4') => {
+    if (selectedComponentIds.length < 2) return;
+
+    const selectedComps = pageComponents.filter(comp => selectedComponentIds.includes(comp.id));
+    const remainingComps = pageComponents.filter(comp => !selectedComponentIds.includes(comp.id));
+
+    const containerName = {
+      'flex-row': 'Flex Row',
+      'flex-col': 'Flex Column',
+      'grid-2': 'Grid 2 Columns',
+      'grid-3': 'Grid 3 Columns',
+      'grid-4': 'Grid 4 Columns',
+    }[containerType];
+
+    const newContainer: PageComponent = {
+      id: `container-${Date.now()}`,
+      type: containerName,
+      category: 'Container',
+      code: '',
+      element: null,
+      isContainer: true,
+      containerType,
+      children: selectedComps,
+      customProps: {
+        gap: '4',
+        justify: 'start',
+        alignItems: 'start',
+        flexWrap: 'nowrap',
+      },
+    };
+
+    // Insert container at the position of the first selected component
+    const firstSelectedIndex = pageComponents.findIndex(comp => comp.id === selectedComponentIds[0]);
+    const newComponents = [...remainingComps];
+    newComponents.splice(firstSelectedIndex, 0, newContainer);
+
+    setPageComponents(newComponents);
+    setSelectedComponentIds([]);
+    setSelectedComponentId(newContainer.id);
+  };
+
+  const selectedComponent = selectedComponentId ? findComponent(selectedComponentId) : undefined;
 
   // Helper function to get semantic HTML tag for a component category
   const getSemanticTag = (category: string): string => {
@@ -224,6 +396,7 @@ const Customize: React.FC = () => {
       'Data Display': 'section',
       'Tables': 'section',
       'Forms': 'form',
+      'Container': 'section',
     };
     return semanticMapping[category] || 'div';
   };
@@ -270,125 +443,131 @@ const Customize: React.FC = () => {
       return '// No components added yet. Add components from the library to generate code.';
     }
 
-    const componentCodes = pageComponents.map((comp) => {
-      const styleAttr = generateInlineStyles(comp.customProps);
+    const generateComponentCode = (comp: PageComponent, indent: string = '  '): string => {
+      if (comp.isContainer) {
+        // Generate container with Tailwind classes
+        const containerClasses: string[] = [];
 
-      // Parse the component code to add inline styles to the root element
-      let componentCode = comp.code.trim();
+        // Container type
+        if (comp.containerType === 'flex-row') containerClasses.push('flex', 'flex-row');
+        else if (comp.containerType === 'flex-col') containerClasses.push('flex', 'flex-col');
+        else if (comp.containerType === 'grid-2') containerClasses.push('grid', 'grid-cols-2');
+        else if (comp.containerType === 'grid-3') containerClasses.push('grid', 'grid-cols-3');
+        else if (comp.containerType === 'grid-4') containerClasses.push('grid', 'grid-cols-4');
 
-      if (styleAttr) {
-        // Find the first > after the opening tag and insert the style attribute before it
-        const firstTagEnd = componentCode.indexOf('>');
-        if (firstTagEnd !== -1) {
-          // Check if there's already a style attribute
-          const hasStyle = componentCode.substring(0, firstTagEnd).includes('style=');
-          if (hasStyle) {
-            // Merge with existing styles - replace the style attribute
-            componentCode = componentCode.replace(/style=\{[^}]*\}/, styleAttr.trim());
-          } else {
-            // Insert the style attribute before the closing >
-            componentCode = componentCode.substring(0, firstTagEnd) + styleAttr + componentCode.substring(firstTagEnd);
+        // Gap
+        if (comp.customProps.gap) containerClasses.push(`gap-${comp.customProps.gap}`);
+
+        // Justify
+        if (comp.customProps.justify) containerClasses.push(`justify-${comp.customProps.justify}`);
+
+        // Align items
+        if (comp.customProps.alignItems) containerClasses.push(`items-${comp.customProps.alignItems}`);
+
+        // Flex wrap
+        if (comp.customProps.flexWrap === 'wrap') containerClasses.push('flex-wrap');
+
+        const className = containerClasses.join(' ');
+        const styleAttr = generateInlineStyles(comp.customProps);
+        const containerTag = useSemanticHTML ? getSemanticTag(comp.category) : 'div';
+
+        // Generate children code
+        const childrenCode = comp.children && comp.children.length > 0
+          ? comp.children.map(child => {
+              const childCode = child.code.trim();
+              const childStyleAttr = generateInlineStyles(child.customProps);
+
+              let finalChildCode = childCode;
+              if (childStyleAttr) {
+                const firstTagEnd = childCode.indexOf('>');
+                if (firstTagEnd !== -1) {
+                  const hasStyle = childCode.substring(0, firstTagEnd).includes('style=');
+                  if (hasStyle) {
+                    finalChildCode = childCode.replace(/style=\{[^}]*\}/, childStyleAttr.trim());
+                  } else {
+                    finalChildCode = childCode.substring(0, firstTagEnd) + childStyleAttr + childCode.substring(firstTagEnd);
+                  }
+                }
+              }
+
+              return finalChildCode.split('\n').map(line => indent + '  ' + line).join('\n');
+            }).join('\n\n')
+          : indent + '  {/* Empty container */}';
+
+        return `${indent}<${containerTag} className="${className}"${styleAttr}>\n${childrenCode}\n${indent}</${containerTag}>`;
+      } else {
+        // Generate regular component with wrapper for spacing
+        const componentCode = comp.code.trim();
+        const wrapperTag = useSemanticHTML ? getSemanticTag(comp.category) : 'div';
+
+        // Spacing styles for wrapper (margin, padding, alignment, dimensions)
+        const wrapperStyles: string[] = [];
+        if (comp.customProps.bgColor) wrapperStyles.push(`backgroundColor: '${comp.customProps.bgColor}'`);
+        if (comp.customProps.marginTop && comp.customProps.marginTop !== '0') wrapperStyles.push(`marginTop: '${comp.customProps.marginTop}'`);
+        if (comp.customProps.marginRight && comp.customProps.marginRight !== '0') wrapperStyles.push(`marginRight: '${comp.customProps.marginRight}'`);
+        if (comp.customProps.marginBottom && comp.customProps.marginBottom !== '0') wrapperStyles.push(`marginBottom: '${comp.customProps.marginBottom}'`);
+        if (comp.customProps.marginLeft && comp.customProps.marginLeft !== '0') wrapperStyles.push(`marginLeft: '${comp.customProps.marginLeft}'`);
+        if (comp.customProps.paddingTop && comp.customProps.paddingTop !== '0') wrapperStyles.push(`paddingTop: '${comp.customProps.paddingTop}'`);
+        if (comp.customProps.paddingRight && comp.customProps.paddingRight !== '0') wrapperStyles.push(`paddingRight: '${comp.customProps.paddingRight}'`);
+        if (comp.customProps.paddingBottom && comp.customProps.paddingBottom !== '0') wrapperStyles.push(`paddingBottom: '${comp.customProps.paddingBottom}'`);
+        if (comp.customProps.paddingLeft && comp.customProps.paddingLeft !== '0') wrapperStyles.push(`paddingLeft: '${comp.customProps.paddingLeft}'`);
+        if (comp.customProps.width) wrapperStyles.push(`width: '${comp.customProps.width}'`);
+        if (comp.customProps.height) wrapperStyles.push(`height: '${comp.customProps.height}'`);
+        if (comp.customProps.maxWidth && comp.customProps.maxWidth !== 'none') wrapperStyles.push(`maxWidth: '${comp.customProps.maxWidth}'`);
+        if (comp.customProps.alignment === 'center') wrapperStyles.push(`marginInline: 'auto'`);
+        else if (comp.customProps.alignment === 'right') wrapperStyles.push(`marginInline: '0 0 0 auto'`);
+        else if (comp.customProps.alignment === 'left') wrapperStyles.push(`marginInline: '0 auto 0 0'`);
+
+        // Component-specific styles (text color, border color, etc.)
+        const componentStyles: string[] = [];
+        if (comp.customProps.textColor) componentStyles.push(`color: '${comp.customProps.textColor}'`);
+        if (comp.customProps.borderColor) componentStyles.push(`borderColor: '${comp.customProps.borderColor}'`);
+
+        const wrapperStyleAttr = wrapperStyles.length > 0 ? ` style={{ ${wrapperStyles.join(', ')} }}` : '';
+        const componentStyleAttr = componentStyles.length > 0 ? ` style={{ ${componentStyles.join(', ')} }}` : '';
+
+        // Apply component-specific styles to the component code
+        let styledComponentCode = componentCode;
+        if (componentStyleAttr) {
+          const firstTagEnd = componentCode.indexOf('>');
+          if (firstTagEnd !== -1) {
+            const hasStyle = componentCode.substring(0, firstTagEnd).includes('style=');
+            if (hasStyle) {
+              styledComponentCode = componentCode.replace(/style=\{[^}]*\}/, componentStyleAttr.trim());
+            } else {
+              styledComponentCode = componentCode.substring(0, firstTagEnd) + componentStyleAttr + componentCode.substring(firstTagEnd);
+            }
           }
         }
+
+        const indentedCode = styledComponentCode.split('\n').map(line => indent + '  ' + line).join('\n');
+
+        // Wrap component with spacing wrapper
+        return `${indent}<${wrapperTag}${wrapperStyleAttr}>\n${indentedCode}\n${indent}</${wrapperTag}>`;
       }
+    };
 
-      const indentedCode = componentCode.split('\n').map(line => '  ' + line).join('\n');
-
-      // Wrapper for alignment
-      const wrapperStyle: string[] = [];
-      if (comp.customProps.width) wrapperStyle.push(`width: '${comp.customProps.width}'`);
-      if (comp.customProps.alignment === 'center') wrapperStyle.push(`marginInline: 'auto'`);
-      else if (comp.customProps.alignment === 'right') wrapperStyle.push(`marginInline: '0 0 0 auto'`);
-      else if (comp.customProps.alignment === 'left') wrapperStyle.push(`marginInline: '0 auto 0 0'`);
-
-      const wrapperStyleAttr = wrapperStyle.length > 0 ? ` style={{ ${wrapperStyle.join(', ')} }}` : '';
-
-      if (useSemanticHTML) {
-        const tag = getSemanticTag(comp.category);
-        return `<${tag}${wrapperStyleAttr}>\n${indentedCode}\n</${tag}>`;
-      }
-      return `<div${wrapperStyleAttr}>\n${indentedCode}\n</div>`;
-    }).join('\n\n');
-
+    const componentCodes = pageComponents.map(comp => generateComponentCode(comp)).join('\n\n');
     const containerTag = useSemanticHTML ? 'main' : 'div';
 
     return `<${containerTag} className="min-h-screen bg-gray-50 dark:bg-slate-800">
   <div className="w-full space-y-0">
-${componentCodes.split('\n').map(line => '    ' + line).join('\n')}
+${componentCodes}
   </div>
 </${containerTag}>`;
   };
 
   const handleCopyCode = () => {
     navigator.clipboard.writeText(generateFullPageCode());
-    alert('Code copied to clipboard!');
+    toast.success('Code copied to clipboard!');
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-800 flex flex-col lg:flex-row overflow-x-hidden">
-      {/* Left Sidebar - Component Library */}
-      <div className="w-full lg:w-80 xl:w-96 bg-white dark:bg-slate-900 shadow-lg overflow-y-auto border-b lg:border-r lg:border-b-0 border-slate-200 dark:border-slate-700 max-h-96 lg:max-h-screen">
-        <div className="p-4">
-          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-4 px-2">Component Library</h2>
-
-          {/* Categories with Expandable Components */}
-          <div className="space-y-2">
-            {componentCategories.map((category) => (
-              <div key={category}>
-                {/* Category Button */}
-                <button
-                  onClick={() => setSelectedCategory(selectedCategory === category ? '' : category)}
-                  className={`w-full px-4 py-2.5 rounded-lg font-medium text-left transition-all ${
-                    selectedCategory === category
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-600'
-                  }`}
-                >
-                  {category}
-                </button>
-
-                {/* Component List - Shows when category is selected */}
-                {selectedCategory === category && (
-                  <div className="mt-2 mb-2 space-y-3 pl-2">
-                    {allComponents[selectedCategory as keyof typeof allComponents].map((component, index) => (
-                      <div
-                        key={index}
-                        className="border border-slate-200 dark:border-slate-700 rounded-lg p-3 hover:border-blue-400 dark:hover:border-blue-500 hover:shadow-md transition-all bg-white dark:bg-slate-800"
-                      >
-                        <div className={`mb-3 flex items-center justify-center bg-slate-50 dark:bg-slate-700 rounded-lg overflow-hidden ${
-                          selectedCategory === 'Headers' || selectedCategory === 'Footers'
-                            ? 'min-h-[100px] p-1'
-                            : 'min-h-[80px] p-3'
-                        }`}>
-                          <div className={`${
-                            selectedCategory === 'Headers' || selectedCategory === 'Footers'
-                              ? 'scale-[0.35] w-full'
-                              : ''
-                          }`}>
-                            {component.preview}
-                          </div>
-                        </div>
-                        <div className="flex justify-between items-center pt-2 border-t border-slate-100 dark:border-slate-600">
-                          <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">{component.name}</span>
-                          <button
-                            onClick={() => addComponentToPage(component, selectedCategory)}
-                            className="px-3 py-1.5 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 transition-all font-medium"
-                          >
-                            + Add
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Center - Canvas Area */}
-      <div className="flex-1 p-4 sm:p-6 overflow-y-auto overflow-x-auto">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-800 flex flex-col">
+      {/* Top Row - Canvas (70vw) + Customization Panel (30vw) */}
+      <div className="flex flex-row w-full">
+        {/* Center - Canvas Area (70vw) */}
+        <div className="p-4 sm:p-6 overflow-y-auto overflow-x-auto" style={{ width: '70vw', maxHeight: '100vh' }}>
         <div className="w-full min-w-[1024px]">
           <div className="bg-white dark:bg-slate-900 rounded-xl shadow-md p-4 sm:p-6 mb-6 w-full">
             <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
@@ -467,6 +646,67 @@ ${componentCodes.split('\n').map(line => '    ' + line).join('\n')}
               </div>
             </div>
 
+            {/* Grouping Action Buttons - Show when 2+ components selected */}
+            {selectedComponentIds.length >= 2 && (
+              <div className="mb-6 p-4 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20 border-2 border-purple-200 dark:border-purple-700 rounded-xl">
+                <div className="flex items-center gap-2 mb-3">
+                  <svg className="w-5 h-5 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-sm font-semibold text-purple-800 dark:text-purple-200">
+                    {selectedComponentIds.length} components selected
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => groupComponents('flex-row')}
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                    Side by Side
+                  </button>
+                  <button
+                    onClick={() => groupComponents('flex-col')}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                    </svg>
+                    Stack Vertically
+                  </button>
+                  <button
+                    onClick={() => groupComponents('grid-2')}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+                    </svg>
+                    Grid 2 Cols
+                  </button>
+                  <button
+                    onClick={() => groupComponents('grid-3')}
+                    className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+                    </svg>
+                    Grid 3 Cols
+                  </button>
+                  <button
+                    onClick={() => groupComponents('grid-4')}
+                    className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+                    </svg>
+                    Grid 4 Cols
+                  </button>
+                </div>
+              </div>
+            )}
+
             {pageComponents.length === 0 ? (
               <div className="text-center py-20 border-2 border-dashed border-gray-300 dark:border-slate-600 rounded-lg bg-gray-50 dark:bg-slate-800">
                 <svg className="w-16 h-16 text-gray-400 dark:text-gray-500 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -499,6 +739,9 @@ ${componentCodes.split('\n').map(line => '    ' + line).join('\n')}
                           onRemove={removeComponent}
                           onSelect={setSelectedComponentId}
                           isSelected={selectedComponentId === component.id}
+                          onToggleSelect={toggleComponentSelection}
+                          isMultiSelected={selectedComponentIds.includes(component.id)}
+                          selectedComponentId={selectedComponentId}
                         />
                       ))}
                     </div>
@@ -544,50 +787,88 @@ ${componentCodes.split('\n').map(line => '    ' + line).join('\n')}
                 <div className="flex-1 overflow-y-auto overflow-x-hidden bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-800 dark:to-slate-900">
                   <div className="w-full space-y-0 p-4">
                     {pageComponents.map((component) => (
-                      <div
-                        key={component.id}
-                        className="relative"
-                        style={{
-                          // Layout properties on wrapper
-                          width: component.customProps.width || '100%',
-                          display: component.customProps.display || 'block',
-                          marginInline: component.customProps.alignment === 'center' ? 'auto' :
-                                       component.customProps.alignment === 'right' ? '0 0 0 auto' :
-                                       component.customProps.alignment === 'left' ? '0 auto 0 0' : 'initial',
-                          // Margins on wrapper - creates space BETWEEN components (visible!)
-                          marginTop: component.customProps.marginTop || '0',
-                          marginRight: component.customProps.marginRight || '0',
-                          marginBottom: component.customProps.marginBottom || '0',
-                          marginLeft: component.customProps.marginLeft || '0',
-                          // Visual indicator
-                          outline: '1px dashed rgba(59, 130, 246, 0.5)',
-                          outlineOffset: '2px',
-                        }}
-                      >
-                        {React.isValidElement(component.element) ? (() => {
-                            const elem = component.element as React.ReactElement<any>;
-                            const existingStyle = typeof elem.props?.style === 'object' ? elem.props.style : {};
+                      <div key={component.id} className="mb-4">
+                        {component.isContainer ? (
+                          // Render Container
+                          <div
+                            className={`
+                              ${component.containerType === 'flex-row' ? 'flex flex-row' : ''}
+                              ${component.containerType === 'flex-col' ? 'flex flex-col' : ''}
+                              ${component.containerType === 'grid-2' ? 'grid grid-cols-2' : ''}
+                              ${component.containerType === 'grid-3' ? 'grid grid-cols-3' : ''}
+                              ${component.containerType === 'grid-4' ? 'grid grid-cols-4' : ''}
+                              ${component.customProps.gap ? `gap-${component.customProps.gap}` : 'gap-4'}
+                              ${component.customProps.justify ? `justify-${component.customProps.justify}` : ''}
+                              ${component.customProps.alignItems ? `items-${component.customProps.alignItems}` : ''}
+                              ${component.customProps.flexWrap === 'wrap' ? 'flex-wrap' : ''}
+                            `.trim()}
+                            style={{
+                              backgroundColor: component.customProps.bgColor,
+                              paddingTop: component.customProps.paddingTop,
+                              paddingRight: component.customProps.paddingRight,
+                              paddingBottom: component.customProps.paddingBottom,
+                              paddingLeft: component.customProps.paddingLeft,
+                            }}
+                          >
+                            {component.children && component.children.map((child) => (
+                              <div key={child.id}>
+                                {React.isValidElement(child.element) ? (() => {
+                                  const elem = child.element as React.ReactElement<any>;
+                                  const existingStyle = typeof elem.props?.style === 'object' ? elem.props.style : {};
 
-                            return React.cloneElement(elem, {
-                              style: {
-                                ...existingStyle,
-                                // Colors
-                                backgroundColor: component.customProps.bgColor || existingStyle?.backgroundColor,
-                                color: component.customProps.textColor || existingStyle?.color,
-                                borderColor: component.customProps.borderColor || existingStyle?.borderColor,
-                                // Dimensions on component
-                                width: '100%',
-                                height: component.customProps.height || existingStyle?.height,
-                                maxWidth: component.customProps.maxWidth && component.customProps.maxWidth !== 'none' ? component.customProps.maxWidth : existingStyle?.maxWidth,
-                                minHeight: component.customProps.minHeight && component.customProps.minHeight !== 'auto' ? component.customProps.minHeight : existingStyle?.minHeight,
-                                // Padding on component - creates space INSIDE component (visible!)
-                                paddingTop: component.customProps.paddingTop && component.customProps.paddingTop !== '0' ? component.customProps.paddingTop : existingStyle?.paddingTop,
-                                paddingRight: component.customProps.paddingRight && component.customProps.paddingRight !== '0' ? component.customProps.paddingRight : existingStyle?.paddingRight,
-                                paddingBottom: component.customProps.paddingBottom && component.customProps.paddingBottom !== '0' ? component.customProps.paddingBottom : existingStyle?.paddingBottom,
-                                paddingLeft: component.customProps.paddingLeft && component.customProps.paddingLeft !== '0' ? component.customProps.paddingLeft : existingStyle?.paddingLeft,
-                              }
-                            });
-                          })() : component.element}
+                                  return React.cloneElement(elem, {
+                                    style: {
+                                      ...existingStyle,
+                                      backgroundColor: child.customProps.bgColor || existingStyle?.backgroundColor,
+                                      color: child.customProps.textColor || existingStyle?.color,
+                                      borderColor: child.customProps.borderColor || existingStyle?.borderColor,
+                                      width: child.customProps.width || existingStyle?.width,
+                                      height: child.customProps.height || existingStyle?.height,
+                                    }
+                                  });
+                                })() : child.element}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          // Render Regular Component
+                          <div
+                            className="relative"
+                            style={{
+                              width: component.customProps.width || '100%',
+                              display: component.customProps.display || 'block',
+                              marginInline: component.customProps.alignment === 'center' ? 'auto' :
+                                           component.customProps.alignment === 'right' ? '0 0 0 auto' :
+                                           component.customProps.alignment === 'left' ? '0 auto 0 0' : 'initial',
+                              marginTop: component.customProps.marginTop || '0',
+                              marginRight: component.customProps.marginRight || '0',
+                              marginBottom: component.customProps.marginBottom || '0',
+                              marginLeft: component.customProps.marginLeft || '0',
+                            }}
+                          >
+                            {React.isValidElement(component.element) ? (() => {
+                                const elem = component.element as React.ReactElement<any>;
+                                const existingStyle = typeof elem.props?.style === 'object' ? elem.props.style : {};
+
+                                return React.cloneElement(elem, {
+                                  style: {
+                                    ...existingStyle,
+                                    backgroundColor: component.customProps.bgColor || existingStyle?.backgroundColor,
+                                    color: component.customProps.textColor || existingStyle?.color,
+                                    borderColor: component.customProps.borderColor || existingStyle?.borderColor,
+                                    width: '100%',
+                                    height: component.customProps.height || existingStyle?.height,
+                                    maxWidth: component.customProps.maxWidth && component.customProps.maxWidth !== 'none' ? component.customProps.maxWidth : existingStyle?.maxWidth,
+                                    minHeight: component.customProps.minHeight && component.customProps.minHeight !== 'auto' ? component.customProps.minHeight : existingStyle?.minHeight,
+                                    paddingTop: component.customProps.paddingTop && component.customProps.paddingTop !== '0' ? component.customProps.paddingTop : existingStyle?.paddingTop,
+                                    paddingRight: component.customProps.paddingRight && component.customProps.paddingRight !== '0' ? component.customProps.paddingRight : existingStyle?.paddingRight,
+                                    paddingBottom: component.customProps.paddingBottom && component.customProps.paddingBottom !== '0' ? component.customProps.paddingBottom : existingStyle?.paddingBottom,
+                                    paddingLeft: component.customProps.paddingLeft && component.customProps.paddingLeft !== '0' ? component.customProps.paddingLeft : existingStyle?.paddingLeft,
+                                  }
+                                });
+                              })() : component.element}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -598,8 +879,8 @@ ${componentCodes.split('\n').map(line => '    ' + line).join('\n')}
         </div>
       </div>
 
-      {/* Right Sidebar - Customization Panel */}
-      <div className="w-full lg:w-80 xl:w-96 bg-gradient-to-br from-slate-50 to-white dark:from-slate-900 dark:to-slate-800 shadow-lg overflow-y-auto border-t lg:border-l lg:border-t-0 border-slate-200 dark:border-slate-700 max-h-screen">
+      {/* Right Sidebar - Customization Panel (30vw) */}
+      <div className="bg-gradient-to-br from-slate-50 to-white dark:from-slate-900 dark:to-slate-800 shadow-lg overflow-y-auto border-l border-slate-200 dark:border-slate-700" style={{ width: '30vw', maxHeight: '100vh' }}>
         <div className="p-6">
           <div className="flex items-center gap-3 mb-6">
             <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl flex items-center justify-center">
@@ -616,15 +897,125 @@ ${componentCodes.split('\n').map(line => '    ' + line).join('\n')}
           {selectedComponent ? (
             <div className="space-y-5">
               {/* Selected Component Info */}
-              <div className="bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl p-4 text-white shadow-lg">
+              <div className={`rounded-xl p-4 text-white shadow-lg ${
+                selectedComponent.isContainer
+                  ? 'bg-gradient-to-r from-purple-500 to-pink-600'
+                  : 'bg-gradient-to-r from-blue-500 to-purple-600'
+              }`}>
                 <div className="flex items-center gap-2 mb-1">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
-                  <p className="text-xs font-medium opacity-90">Selected Component</p>
+                  <p className="text-xs font-medium opacity-90">
+                    {selectedComponent.isContainer ? 'Selected Container' : 'Selected Component'}
+                  </p>
                 </div>
                 <p className="text-lg font-bold">{selectedComponent.type}</p>
+                {selectedComponent.isContainer && selectedComponent.children && (
+                  <p className="text-xs opacity-75 mt-1">
+                    {selectedComponent.children.length} component{selectedComponent.children.length !== 1 ? 's' : ''} inside
+                  </p>
+                )}
               </div>
+
+              {/* Container Layout Options - Only for containers */}
+              {selectedComponent.isContainer && (
+                <>
+                  {/* Gap */}
+                  <div className="bg-white dark:bg-slate-800 rounded-xl p-4 shadow-sm border border-slate-200 dark:border-slate-700">
+                    <label className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">
+                      <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+                      Gap (Spacing)
+                    </label>
+                    <select
+                      value={selectedComponent.customProps.gap || '4'}
+                      onChange={(e) => updateComponentProps(selectedComponent.id, { gap: e.target.value })}
+                      className="w-full px-4 py-3 border-2 border-slate-200 dark:border-slate-600 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-gray-100"
+                    >
+                      <option value="0">None (0px)</option>
+                      <option value="1">0.25rem (4px)</option>
+                      <option value="2">0.5rem (8px)</option>
+                      <option value="3">0.75rem (12px)</option>
+                      <option value="4">1rem (16px)</option>
+                      <option value="6">1.5rem (24px)</option>
+                      <option value="8">2rem (32px)</option>
+                      <option value="12">3rem (48px)</option>
+                      <option value="16">4rem (64px)</option>
+                    </select>
+                  </div>
+
+                  {/* Justify Content */}
+                  <div className="bg-white dark:bg-slate-800 rounded-xl p-4 shadow-sm border border-slate-200 dark:border-slate-700">
+                    <label className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">
+                      <div className="w-2 h-2 bg-pink-500 rounded-full"></div>
+                      Justify Content
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {['start', 'center', 'end', 'between', 'around', 'evenly'].map((value) => (
+                        <button
+                          key={value}
+                          onClick={() => updateComponentProps(selectedComponent.id, { justify: value as any })}
+                          className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                            selectedComponent.customProps.justify === value
+                              ? 'bg-pink-500 text-white'
+                              : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                          }`}
+                        >
+                          {value}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Align Items */}
+                  <div className="bg-white dark:bg-slate-800 rounded-xl p-4 shadow-sm border border-slate-200 dark:border-slate-700">
+                    <label className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">
+                      <div className="w-2 h-2 bg-indigo-500 rounded-full"></div>
+                      Align Items
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {['start', 'center', 'end', 'stretch'].map((value) => (
+                        <button
+                          key={value}
+                          onClick={() => updateComponentProps(selectedComponent.id, { alignItems: value as any })}
+                          className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                            selectedComponent.customProps.alignItems === value
+                              ? 'bg-indigo-500 text-white'
+                              : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                          }`}
+                        >
+                          {value}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Flex Wrap - Only for flex containers */}
+                  {(selectedComponent.containerType === 'flex-row' || selectedComponent.containerType === 'flex-col') && (
+                    <div className="bg-white dark:bg-slate-800 rounded-xl p-4 shadow-sm border border-slate-200 dark:border-slate-700">
+                      <label className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">
+                        <div className="w-2 h-2 bg-teal-500 rounded-full"></div>
+                        Flex Wrap
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {['wrap', 'nowrap'].map((value) => (
+                          <button
+                            key={value}
+                            onClick={() => updateComponentProps(selectedComponent.id, { flexWrap: value as any })}
+                            className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                              selectedComponent.customProps.flexWrap === value
+                                ? 'bg-teal-500 text-white'
+                                : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                            }`}
+                          >
+                            {value}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
 
               {/* Background Color */}
               <div className="bg-white dark:bg-slate-800 rounded-xl p-4 shadow-sm border border-slate-200 dark:border-slate-700">
@@ -1022,6 +1413,68 @@ ${componentCodes.split('\n').map(line => '    ' + line).join('\n')}
               </div>
             </div>
           )}
+        </div>
+      </div>
+      </div>
+
+      {/* Bottom Row - Component Library (100vw) */}
+      <div className="w-full bg-white dark:bg-slate-900 shadow-lg overflow-y-auto border-t border-slate-200 dark:border-slate-700" style={{ maxHeight: '400px' }}>
+        <div className="p-4">
+          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-4 px-2">Component Library</h2>
+
+          {/* Categories with Expandable Components */}
+          <div className="space-y-2">
+            {componentCategories.map((category) => (
+              <div key={category}>
+                {/* Category Button */}
+                <button
+                  onClick={() => setSelectedCategory(selectedCategory === category ? '' : category)}
+                  className={`w-full px-4 py-2.5 rounded-lg font-medium text-left transition-all ${
+                    selectedCategory === category
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-600'
+                  }`}
+                >
+                  {category}
+                </button>
+
+                {/* Component List - Shows when category is selected */}
+                {selectedCategory === category && (
+                  <div className="mt-2 mb-2 space-y-3 pl-2">
+                    {allComponents[selectedCategory as keyof typeof allComponents].map((component, index) => (
+                      <div
+                        key={index}
+                        className="border border-slate-200 dark:border-slate-700 rounded-lg p-3 hover:border-blue-400 dark:hover:border-blue-500 hover:shadow-md transition-all bg-white dark:bg-slate-800"
+                      >
+                        <div className={`mb-3 flex items-center justify-center bg-slate-50 dark:bg-slate-700 rounded-lg overflow-hidden ${
+                          selectedCategory === 'Headers' || selectedCategory === 'Footers'
+                            ? 'min-h-[100px] p-1'
+                            : 'min-h-[80px] p-3'
+                        }`}>
+                          <div className={`${
+                            selectedCategory === 'Headers' || selectedCategory === 'Footers'
+                              ? 'scale-[0.35] w-full'
+                              : ''
+                          }`}>
+                            {component.preview}
+                          </div>
+                        </div>
+                        <div className="flex justify-between items-center pt-2 border-t border-slate-100 dark:border-slate-600">
+                          <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">{component.name}</span>
+                          <button
+                            onClick={() => addComponentToPage(component, selectedCategory)}
+                            className="px-3 py-1.5 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 transition-all font-medium"
+                          >
+                            + Add
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>

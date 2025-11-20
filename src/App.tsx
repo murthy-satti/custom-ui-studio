@@ -1,4 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
+import { Toaster } from 'react-hot-toast';
 import Navbar from './components/ui/Navbar';
 import Footer from './components/ui/Footer';
 import Home from './pages/Home';
@@ -29,6 +30,35 @@ function AppContent() {
 function App() {
   return (
     <Router>
+      <Toaster
+        position="top-center"
+        toastOptions={{
+          success: {
+            style: {
+              background: '#d1fae5', // Light green (Tailwind green-100)
+              color: '#065f46',      // Dark green text (Tailwind green-900)
+              border: '1px solid #6ee7b7',
+              fontWeight: 500,
+            },
+            iconTheme: {
+              primary: '#10b981', // Tailwind green-500
+              secondary: '#d1fae5',
+            },
+          },
+          error: {
+            style: {
+              background: '#fee2e2', // Light red (Tailwind red-100)
+              color: '#991b1b',      // Dark red text (Tailwind red-900)
+              border: '1px solid #fca5a5',
+              fontWeight: 500,
+            },
+            iconTheme: {
+              primary: '#ef4444', // Tailwind red-500
+              secondary: '#fee2e2',
+            },
+          },
+        }}
+      />
       <AppContent />
     </Router>
   );
