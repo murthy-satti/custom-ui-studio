@@ -91,7 +91,9 @@ const SortableItem: React.FC<SortableItemProps> = ({ id, component, onRemove, on
     <div
       ref={setNodeRef}
       style={style}
-      className={`relative group bg-white dark:bg-slate-900 rounded-lg p-4 cursor-pointer transition-all w-full ${
+      className={`relative group bg-white dark:bg-slate-900 rounded-lg p-4 cursor-pointer transition-all ${
+        component.isContainer || component.customProps.alignment ? 'w-full' : 'flex-shrink-0'
+      } ${
         isMultiSelected ? 'ring-2 ring-purple-500 shadow-lg' :
         isSelected ? 'ring-2 ring-blue-500 shadow-lg' :
         'border-2 border-gray-200 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-500'
@@ -141,15 +143,13 @@ const SortableItem: React.FC<SortableItemProps> = ({ id, component, onRemove, on
 
       {/* Component Preview - Wrapper handles spacing & layout */}
       <div
-        className="pt-10"
+        className={`pt-10 ${component.customProps.alignment ? 'flex' : ''} ${
+          component.customProps.alignment === 'left' ? 'justify-start' :
+          component.customProps.alignment === 'center' ? 'justify-center' :
+          component.customProps.alignment === 'right' ? 'justify-end' : ''
+        }`}
         onClick={() => onSelect(id)}
         style={{
-          // Layout properties on wrapper
-          width: component.customProps.width || '100%',
-          display: component.customProps.display || 'block',
-          marginInline: component.customProps.alignment === 'center' ? 'auto' :
-                       component.customProps.alignment === 'right' ? '0 0 0 auto' :
-                       component.customProps.alignment === 'left' ? '0 auto 0 0' : 'initial',
           // Margins on wrapper - creates space BETWEEN components
           marginTop: component.customProps.marginTop || '0',
           marginRight: component.customProps.marginRight || '0',
@@ -161,6 +161,7 @@ const SortableItem: React.FC<SortableItemProps> = ({ id, component, onRemove, on
           // Render Container with Tailwind classes
           <div
             className={`
+              w-full
               ${component.containerType === 'flex-row' ? 'flex flex-row' : ''}
               ${component.containerType === 'flex-col' ? 'flex flex-col' : ''}
               ${component.containerType === 'grid-2' ? 'grid grid-cols-2' : ''}
@@ -236,7 +237,7 @@ const SortableItem: React.FC<SortableItemProps> = ({ id, component, onRemove, on
                 color: component.customProps.textColor || existingStyle?.color,
                 borderColor: component.customProps.borderColor || existingStyle?.borderColor,
                 // Dimensions on component
-                width: '100%',
+                width: component.customProps.width || 'auto',
                 height: component.customProps.height || existingStyle?.height,
                 maxWidth: component.customProps.maxWidth && component.customProps.maxWidth !== 'none' ? component.customProps.maxWidth : existingStyle?.maxWidth,
                 minHeight: component.customProps.minHeight && component.customProps.minHeight !== 'auto' ? component.customProps.minHeight : existingStyle?.minHeight,
@@ -262,6 +263,7 @@ const Customize: React.FC = () => {
   const [showCode, setShowCode] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [useSemanticHTML, setUseSemanticHTML] = useState(false);
+  const [isCustomizePanelMinimized, setIsCustomizePanelMinimized] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -384,6 +386,25 @@ const Customize: React.FC = () => {
     setSelectedComponentId(newContainer.id);
   };
 
+  const ungroupContainer = (containerId: string) => {
+    const container = pageComponents.find(comp => comp.id === containerId);
+    if (!container || !container.isContainer || !container.children) return;
+
+    // Get the position of the container
+    const containerIndex = pageComponents.findIndex(comp => comp.id === containerId);
+
+    // Get all components except the container
+    const remainingComps = pageComponents.filter(comp => comp.id !== containerId);
+
+    // Insert the children back at the container's position
+    const newComponents = [...remainingComps];
+    newComponents.splice(containerIndex, 0, ...container.children);
+
+    setPageComponents(newComponents);
+    setSelectedComponentId(null);
+    toast.success('Container ungrouped successfully!');
+  };
+
   const selectedComponent = selectedComponentId ? findComponent(selectedComponentId) : undefined;
 
   // Helper function to get semantic HTML tag for a component category
@@ -401,8 +422,8 @@ const Customize: React.FC = () => {
     return semanticMapping[category] || 'div';
   };
 
-  // Helper function to generate inline styles from custom props
-  const generateInlineStyles = (props: PageComponent['customProps']): string => {
+  // Helper function to generate inline styles for containers and their children
+  const generateInlineStyles = (props: PageComponent['customProps'], isContainerChild: boolean = false): string => {
     const styles: string[] = [];
 
     // Colors
@@ -416,22 +437,19 @@ const Customize: React.FC = () => {
     if (props.maxWidth && props.maxWidth !== 'none') styles.push(`maxWidth: '${props.maxWidth}'`);
     if (props.minHeight && props.minHeight !== 'auto') styles.push(`minHeight: '${props.minHeight}'`);
 
-    // Margins
-    if (props.marginTop && props.marginTop !== '0') styles.push(`marginTop: '${props.marginTop}'`);
-    if (props.marginRight && props.marginRight !== '0') styles.push(`marginRight: '${props.marginRight}'`);
-    if (props.marginBottom && props.marginBottom !== '0') styles.push(`marginBottom: '${props.marginBottom}'`);
-    if (props.marginLeft && props.marginLeft !== '0') styles.push(`marginLeft: '${props.marginLeft}'`);
-
-    // Padding
+    // Padding - space INSIDE component
     if (props.paddingTop && props.paddingTop !== '0') styles.push(`paddingTop: '${props.paddingTop}'`);
     if (props.paddingRight && props.paddingRight !== '0') styles.push(`paddingRight: '${props.paddingRight}'`);
     if (props.paddingBottom && props.paddingBottom !== '0') styles.push(`paddingBottom: '${props.paddingBottom}'`);
     if (props.paddingLeft && props.paddingLeft !== '0') styles.push(`paddingLeft: '${props.paddingLeft}'`);
 
-    // Alignment
-    if (props.alignment === 'center') styles.push(`marginInline: 'auto'`);
-    else if (props.alignment === 'right') styles.push(`marginInline: '0 0 0 auto'`);
-    else if (props.alignment === 'left') styles.push(`marginInline: '0 auto 0 0'`);
+    // Only add margins for container children (margins on containers are handled by wrapper)
+    if (isContainerChild) {
+      if (props.marginTop && props.marginTop !== '0') styles.push(`marginTop: '${props.marginTop}'`);
+      if (props.marginRight && props.marginRight !== '0') styles.push(`marginRight: '${props.marginRight}'`);
+      if (props.marginBottom && props.marginBottom !== '0') styles.push(`marginBottom: '${props.marginBottom}'`);
+      if (props.marginLeft && props.marginLeft !== '0') styles.push(`marginLeft: '${props.marginLeft}'`);
+    }
 
     if (props.display) styles.push(`display: '${props.display}'`);
 
@@ -446,7 +464,7 @@ const Customize: React.FC = () => {
     const generateComponentCode = (comp: PageComponent, indent: string = '  '): string => {
       if (comp.isContainer) {
         // Generate container with Tailwind classes
-        const containerClasses: string[] = [];
+        const containerClasses: string[] = ['w-full'];
 
         // Container type
         if (comp.containerType === 'flex-row') containerClasses.push('flex', 'flex-row');
@@ -475,7 +493,7 @@ const Customize: React.FC = () => {
         const childrenCode = comp.children && comp.children.length > 0
           ? comp.children.map(child => {
               const childCode = child.code.trim();
-              const childStyleAttr = generateInlineStyles(child.customProps);
+              const childStyleAttr = generateInlineStyles(child.customProps, true);
 
               let finalChildCode = childCode;
               if (childStyleAttr) {
@@ -503,26 +521,39 @@ const Customize: React.FC = () => {
         // Spacing styles for wrapper (margin, padding, alignment, dimensions)
         const wrapperStyles: string[] = [];
         if (comp.customProps.bgColor) wrapperStyles.push(`backgroundColor: '${comp.customProps.bgColor}'`);
+
+        // Margins - applied to wrapper (space BETWEEN components)
         if (comp.customProps.marginTop && comp.customProps.marginTop !== '0') wrapperStyles.push(`marginTop: '${comp.customProps.marginTop}'`);
         if (comp.customProps.marginRight && comp.customProps.marginRight !== '0') wrapperStyles.push(`marginRight: '${comp.customProps.marginRight}'`);
         if (comp.customProps.marginBottom && comp.customProps.marginBottom !== '0') wrapperStyles.push(`marginBottom: '${comp.customProps.marginBottom}'`);
         if (comp.customProps.marginLeft && comp.customProps.marginLeft !== '0') wrapperStyles.push(`marginLeft: '${comp.customProps.marginLeft}'`);
-        if (comp.customProps.paddingTop && comp.customProps.paddingTop !== '0') wrapperStyles.push(`paddingTop: '${comp.customProps.paddingTop}'`);
-        if (comp.customProps.paddingRight && comp.customProps.paddingRight !== '0') wrapperStyles.push(`paddingRight: '${comp.customProps.paddingRight}'`);
-        if (comp.customProps.paddingBottom && comp.customProps.paddingBottom !== '0') wrapperStyles.push(`paddingBottom: '${comp.customProps.paddingBottom}'`);
-        if (comp.customProps.paddingLeft && comp.customProps.paddingLeft !== '0') wrapperStyles.push(`paddingLeft: '${comp.customProps.paddingLeft}'`);
-        if (comp.customProps.width) wrapperStyles.push(`width: '${comp.customProps.width}'`);
-        if (comp.customProps.height) wrapperStyles.push(`height: '${comp.customProps.height}'`);
-        if (comp.customProps.maxWidth && comp.customProps.maxWidth !== 'none') wrapperStyles.push(`maxWidth: '${comp.customProps.maxWidth}'`);
-        if (comp.customProps.alignment === 'center') wrapperStyles.push(`marginInline: 'auto'`);
-        else if (comp.customProps.alignment === 'right') wrapperStyles.push(`marginInline: '0 0 0 auto'`);
-        else if (comp.customProps.alignment === 'left') wrapperStyles.push(`marginInline: '0 auto 0 0'`);
 
-        // Component-specific styles (text color, border color, etc.)
+        // Component-specific styles (padding, colors, dimensions)
         const componentStyles: string[] = [];
+
+        // Padding - applied to component (space INSIDE component)
+        if (comp.customProps.paddingTop && comp.customProps.paddingTop !== '0') componentStyles.push(`paddingTop: '${comp.customProps.paddingTop}'`);
+        if (comp.customProps.paddingRight && comp.customProps.paddingRight !== '0') componentStyles.push(`paddingRight: '${comp.customProps.paddingRight}'`);
+        if (comp.customProps.paddingBottom && comp.customProps.paddingBottom !== '0') componentStyles.push(`paddingBottom: '${comp.customProps.paddingBottom}'`);
+        if (comp.customProps.paddingLeft && comp.customProps.paddingLeft !== '0') componentStyles.push(`paddingLeft: '${comp.customProps.paddingLeft}'`);
+
+        // Colors and dimensions
         if (comp.customProps.textColor) componentStyles.push(`color: '${comp.customProps.textColor}'`);
         if (comp.customProps.borderColor) componentStyles.push(`borderColor: '${comp.customProps.borderColor}'`);
+        if (comp.customProps.width) componentStyles.push(`width: '${comp.customProps.width}'`);
+        if (comp.customProps.height) componentStyles.push(`height: '${comp.customProps.height}'`);
+        if (comp.customProps.maxWidth && comp.customProps.maxWidth !== 'none') componentStyles.push(`maxWidth: '${comp.customProps.maxWidth}'`);
 
+        // Generate wrapper className for alignment
+        const wrapperClasses: string[] = [];
+        if (comp.customProps.alignment) {
+          wrapperClasses.push('flex');
+          if (comp.customProps.alignment === 'left') wrapperClasses.push('justify-start');
+          else if (comp.customProps.alignment === 'center') wrapperClasses.push('justify-center');
+          else if (comp.customProps.alignment === 'right') wrapperClasses.push('justify-end');
+        }
+
+        const wrapperClassName = wrapperClasses.length > 0 ? ` className="${wrapperClasses.join(' ')}"` : '';
         const wrapperStyleAttr = wrapperStyles.length > 0 ? ` style={{ ${wrapperStyles.join(', ')} }}` : '';
         const componentStyleAttr = componentStyles.length > 0 ? ` style={{ ${componentStyles.join(', ')} }}` : '';
 
@@ -543,7 +574,7 @@ const Customize: React.FC = () => {
         const indentedCode = styledComponentCode.split('\n').map(line => indent + '  ' + line).join('\n');
 
         // Wrap component with spacing wrapper
-        return `${indent}<${wrapperTag}${wrapperStyleAttr}>\n${indentedCode}\n${indent}</${wrapperTag}>`;
+        return `${indent}<${wrapperTag}${wrapperClassName}${wrapperStyleAttr}>\n${indentedCode}\n${indent}</${wrapperTag}>`;
       }
     };
 
@@ -564,10 +595,10 @@ ${componentCodes}
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-800 flex flex-col">
-      {/* Top Row - Canvas (70vw) + Customization Panel (30vw) */}
+      {/* Top Row - Canvas + Customization Panel */}
       <div className="flex flex-row w-full">
-        {/* Center - Canvas Area (70vw) */}
-        <div className="p-4 sm:p-6 overflow-y-auto overflow-x-auto" style={{ width: '70vw', maxHeight: '100vh' }}>
+        {/* Center - Canvas Area */}
+        <div className="p-4 sm:p-6 transition-all duration-300" style={{ width: isCustomizePanelMinimized ? '95vw' : '70vw' }}>
         <div className="w-full min-w-[1024px]">
           <div className="bg-white dark:bg-slate-900 rounded-xl shadow-md p-4 sm:p-6 mb-6 w-full">
             <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
@@ -660,7 +691,7 @@ ${componentCodes}
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => groupComponents('flex-row')}
-                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+                    className="px-6 py-3 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 border border-purple-600 font-semibold rounded-lg hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-colors duration-200 flex items-center gap-2"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -669,7 +700,7 @@ ${componentCodes}
                   </button>
                   <button
                     onClick={() => groupComponents('flex-col')}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+                    className="px-6 py-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border border-blue-600 font-semibold rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors duration-200 flex items-center gap-2"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
@@ -678,7 +709,7 @@ ${componentCodes}
                   </button>
                   <button
                     onClick={() => groupComponents('grid-2')}
-                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+                    className="px-6 py-3 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 border border-indigo-600 font-semibold rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/30 transition-colors duration-200 flex items-center gap-2"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
@@ -687,7 +718,7 @@ ${componentCodes}
                   </button>
                   <button
                     onClick={() => groupComponents('grid-3')}
-                    className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+                    className="px-6 py-3 bg-cyan-50 dark:bg-cyan-900/20 text-cyan-700 dark:text-cyan-300 border border-cyan-600 font-semibold rounded-lg hover:bg-cyan-100 dark:hover:bg-cyan-900/30 transition-colors duration-200 flex items-center gap-2"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
@@ -696,7 +727,7 @@ ${componentCodes}
                   </button>
                   <button
                     onClick={() => groupComponents('grid-4')}
-                    className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+                    className="px-6 py-3 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 border border-emerald-600 font-semibold rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-colors duration-200 flex items-center gap-2"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
@@ -730,7 +761,7 @@ ${componentCodes}
                     items={pageComponents.map((c) => c.id)}
                     strategy={verticalListSortingStrategy}
                   >
-                    <div className="space-y-3 w-full">
+                    <div className="flex flex-wrap gap-3 w-full">
                       {pageComponents.map((component) => (
                         <SortableItem
                           key={component.id}
@@ -787,11 +818,12 @@ ${componentCodes}
                 <div className="flex-1 overflow-y-auto overflow-x-hidden bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-800 dark:to-slate-900">
                   <div className="w-full space-y-0 p-4">
                     {pageComponents.map((component) => (
-                      <div key={component.id} className="mb-4">
+                      <div key={component.id} className={`mb-4 ${component.isContainer || component.customProps.alignment ? 'w-full' : ''}`}>
                         {component.isContainer ? (
                           // Render Container
                           <div
                             className={`
+                              w-full
                               ${component.containerType === 'flex-row' ? 'flex flex-row' : ''}
                               ${component.containerType === 'flex-col' ? 'flex flex-col' : ''}
                               ${component.containerType === 'grid-2' ? 'grid grid-cols-2' : ''}
@@ -824,6 +856,10 @@ ${componentCodes}
                                       borderColor: child.customProps.borderColor || existingStyle?.borderColor,
                                       width: child.customProps.width || existingStyle?.width,
                                       height: child.customProps.height || existingStyle?.height,
+                                      paddingTop: child.customProps.paddingTop && child.customProps.paddingTop !== '0' ? child.customProps.paddingTop : existingStyle?.paddingTop,
+                                      paddingRight: child.customProps.paddingRight && child.customProps.paddingRight !== '0' ? child.customProps.paddingRight : existingStyle?.paddingRight,
+                                      paddingBottom: child.customProps.paddingBottom && child.customProps.paddingBottom !== '0' ? child.customProps.paddingBottom : existingStyle?.paddingBottom,
+                                      paddingLeft: child.customProps.paddingLeft && child.customProps.paddingLeft !== '0' ? child.customProps.paddingLeft : existingStyle?.paddingLeft,
                                     }
                                   });
                                 })() : child.element}
@@ -833,13 +869,12 @@ ${componentCodes}
                         ) : (
                           // Render Regular Component
                           <div
-                            className="relative"
+                            className={`relative ${component.customProps.alignment ? 'flex' : ''} ${
+                              component.customProps.alignment === 'left' ? 'justify-start' :
+                              component.customProps.alignment === 'center' ? 'justify-center' :
+                              component.customProps.alignment === 'right' ? 'justify-end' : ''
+                            }`}
                             style={{
-                              width: component.customProps.width || '100%',
-                              display: component.customProps.display || 'block',
-                              marginInline: component.customProps.alignment === 'center' ? 'auto' :
-                                           component.customProps.alignment === 'right' ? '0 0 0 auto' :
-                                           component.customProps.alignment === 'left' ? '0 auto 0 0' : 'initial',
                               marginTop: component.customProps.marginTop || '0',
                               marginRight: component.customProps.marginRight || '0',
                               marginBottom: component.customProps.marginBottom || '0',
@@ -856,7 +891,7 @@ ${componentCodes}
                                     backgroundColor: component.customProps.bgColor || existingStyle?.backgroundColor,
                                     color: component.customProps.textColor || existingStyle?.color,
                                     borderColor: component.customProps.borderColor || existingStyle?.borderColor,
-                                    width: '100%',
+                                    width: component.customProps.width || 'auto',
                                     height: component.customProps.height || existingStyle?.height,
                                     maxWidth: component.customProps.maxWidth && component.customProps.maxWidth !== 'none' ? component.customProps.maxWidth : existingStyle?.maxWidth,
                                     minHeight: component.customProps.minHeight && component.customProps.minHeight !== 'auto' ? component.customProps.minHeight : existingStyle?.minHeight,
@@ -879,21 +914,53 @@ ${componentCodes}
         </div>
       </div>
 
-      {/* Right Sidebar - Customization Panel (30vw) */}
-      <div className="bg-gradient-to-br from-slate-50 to-white dark:from-slate-900 dark:to-slate-800 shadow-lg overflow-y-auto border-l border-slate-200 dark:border-slate-700" style={{ width: '30vw', maxHeight: '100vh' }}>
-        <div className="p-6">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl flex items-center justify-center">
-              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+      {/* Right Sidebar - Customization Panel */}
+      <div className="bg-gradient-to-br from-slate-50 to-white dark:from-slate-900 dark:to-slate-800 shadow-lg border-l border-slate-200 dark:border-slate-700 transition-all duration-300 overflow-hidden flex flex-col" style={{ width: isCustomizePanelMinimized ? '5vw' : '30vw', maxHeight: '100vh' }}>
+        {isCustomizePanelMinimized ? (
+          // Minimized View - Only Expand Button
+          <div className="h-full flex items-start justify-center pt-6">
+            <button
+              onClick={() => setIsCustomizePanelMinimized(false)}
+              className="p-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors shadow-lg"
+              title="Expand Customize Panel"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
               </svg>
-            </div>
-            <div>
-              <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Customize</h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Style your component</p>
-            </div>
+            </button>
           </div>
+        ) : (
+          // Expanded View - Full Customization Panel
+          <>
+            {/* Fixed Header */}
+            <div className="p-6 pb-4 border-b border-slate-200 dark:border-slate-700 flex-shrink-0">
+              <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl flex items-center justify-center">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Customize</h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Style your component</p>
+                </div>
+              </div>
+              {/* Minimize Button */}
+              <button
+                onClick={() => setIsCustomizePanelMinimized(true)}
+                className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                title="Minimize Panel"
+              >
+                <svg className="w-5 h-5 text-slate-600 dark:text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+            </div>
 
+            {/* Scrollable Content */}
+            <div className="flex-1 overflow-y-auto p-6 pt-4">
           {selectedComponent ? (
             <div className="space-y-5">
               {/* Selected Component Info */}
@@ -917,6 +984,19 @@ ${componentCodes}
                   </p>
                 )}
               </div>
+
+              {/* Ungroup Button - Only for containers */}
+              {selectedComponent.isContainer && (
+                <button
+                  onClick={() => ungroupContainer(selectedComponent.id)}
+                  className="w-full px-4 py-3 bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600 text-white font-semibold rounded-xl transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                  </svg>
+                  Ungroup Container
+                </button>
+              )}
 
               {/* Container Layout Options - Only for containers */}
               {selectedComponent.isContainer && (
@@ -955,10 +1035,10 @@ ${componentCodes}
                         <button
                           key={value}
                           onClick={() => updateComponentProps(selectedComponent.id, { justify: value as any })}
-                          className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                          className={`px-4 py-2.5 rounded-lg font-semibold transition-colors duration-200 ${
                             selectedComponent.customProps.justify === value
-                              ? 'bg-pink-500 text-white'
-                              : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                              ? 'bg-pink-50 dark:bg-pink-900/20 text-pink-700 dark:text-pink-300 border border-pink-600'
+                              : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-transparent hover:bg-slate-200 dark:hover:bg-slate-600'
                           }`}
                         >
                           {value}
@@ -978,10 +1058,10 @@ ${componentCodes}
                         <button
                           key={value}
                           onClick={() => updateComponentProps(selectedComponent.id, { alignItems: value as any })}
-                          className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                          className={`px-4 py-2.5 rounded-lg font-semibold transition-colors duration-200 ${
                             selectedComponent.customProps.alignItems === value
-                              ? 'bg-indigo-500 text-white'
-                              : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                              ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 border border-indigo-600'
+                              : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-transparent hover:bg-slate-200 dark:hover:bg-slate-600'
                           }`}
                         >
                           {value}
@@ -1002,10 +1082,10 @@ ${componentCodes}
                           <button
                             key={value}
                             onClick={() => updateComponentProps(selectedComponent.id, { flexWrap: value as any })}
-                            className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                            className={`px-4 py-2.5 rounded-lg font-semibold transition-colors duration-200 ${
                               selectedComponent.customProps.flexWrap === value
-                                ? 'bg-teal-500 text-white'
-                                : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                                ? 'bg-teal-50 dark:bg-teal-900/20 text-teal-700 dark:text-teal-300 border border-teal-600'
+                                : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-transparent hover:bg-slate-200 dark:hover:bg-slate-600'
                             }`}
                           >
                             {value}
@@ -1120,7 +1200,7 @@ ${componentCodes}
                     <div className="flex gap-2">
                       <input
                         type="text"
-                        value={selectedComponent.customProps.width || '100%'}
+                        value={selectedComponent.customProps.width || 'auto'}
                         onChange={(e) => updateComponentProps(selectedComponent.id, { width: e.target.value })}
                         className="flex-1 px-3 py-2 border-2 border-slate-200 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-gray-100"
                         placeholder="e.g., 100%, 500px, 50vw"
@@ -1171,36 +1251,59 @@ ${componentCodes}
                 </label>
                 <div className="grid grid-cols-3 gap-2">
                   <button
-                    onClick={() => updateComponentProps(selectedComponent.id, { alignment: 'left' })}
-                    className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                    onClick={() => {
+                      const width = selectedComponent.customProps.width && selectedComponent.customProps.width !== 'auto'
+                        ? selectedComponent.customProps.width
+                        : '50%';
+                      updateComponentProps(selectedComponent.id, { alignment: 'left', width });
+                    }}
+                    className={`px-4 py-2.5 rounded-lg font-semibold transition-colors duration-200 ${
                       selectedComponent.customProps.alignment === 'left'
-                        ? 'bg-cyan-500 text-white'
-                        : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                        ? 'bg-cyan-50 dark:bg-cyan-900/20 text-cyan-700 dark:text-cyan-300 border border-cyan-600'
+                        : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-transparent hover:bg-slate-200 dark:hover:bg-slate-600'
                     }`}
                   >
                     Left
                   </button>
                   <button
-                    onClick={() => updateComponentProps(selectedComponent.id, { alignment: 'center' })}
-                    className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                    onClick={() => {
+                      const width = selectedComponent.customProps.width && selectedComponent.customProps.width !== 'auto'
+                        ? selectedComponent.customProps.width
+                        : '50%';
+                      updateComponentProps(selectedComponent.id, { alignment: 'center', width });
+                    }}
+                    className={`px-4 py-2.5 rounded-lg font-semibold transition-colors duration-200 ${
                       selectedComponent.customProps.alignment === 'center'
-                        ? 'bg-cyan-500 text-white'
-                        : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                        ? 'bg-cyan-50 dark:bg-cyan-900/20 text-cyan-700 dark:text-cyan-300 border border-cyan-600'
+                        : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-transparent hover:bg-slate-200 dark:hover:bg-slate-600'
                     }`}
                   >
                     Center
                   </button>
                   <button
-                    onClick={() => updateComponentProps(selectedComponent.id, { alignment: 'right' })}
-                    className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                    onClick={() => {
+                      const width = selectedComponent.customProps.width && selectedComponent.customProps.width !== 'auto'
+                        ? selectedComponent.customProps.width
+                        : '50%';
+                      updateComponentProps(selectedComponent.id, { alignment: 'right', width });
+                    }}
+                    className={`px-4 py-2.5 rounded-lg font-semibold transition-colors duration-200 ${
                       selectedComponent.customProps.alignment === 'right'
-                        ? 'bg-cyan-500 text-white'
-                        : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                        ? 'bg-cyan-50 dark:bg-cyan-900/20 text-cyan-700 dark:text-cyan-300 border border-cyan-600'
+                        : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-transparent hover:bg-slate-200 dark:hover:bg-slate-600'
                     }`}
                   >
                     Right
                   </button>
                 </div>
+                {/* Alignment Info */}
+                {selectedComponent.customProps.alignment && (
+                  <div className="mt-3 p-2 bg-cyan-50 dark:bg-cyan-900/20 border border-cyan-200 dark:border-cyan-800 rounded-lg">
+                    <p className="text-xs text-cyan-800 dark:text-cyan-300">
+                      💡 Component width set to <strong>{selectedComponent.customProps.width || '50%'}</strong>. Adjust width above to see alignment effect.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Margin Section */}
@@ -1413,12 +1516,14 @@ ${componentCodes}
               </div>
             </div>
           )}
-        </div>
+            </div>
+          </>
+        )}
       </div>
       </div>
 
       {/* Bottom Row - Component Library (100vw) */}
-      <div className="w-full bg-white dark:bg-slate-900 shadow-lg overflow-y-auto border-t border-slate-200 dark:border-slate-700" style={{ maxHeight: '400px' }}>
+      <div className="w-full bg-white dark:bg-slate-900 shadow-lg border-t border-slate-200 dark:border-slate-700">
         <div className="p-4">
           <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-4 px-2">Component Library</h2>
 
@@ -1440,11 +1545,12 @@ ${componentCodes}
 
                 {/* Component List - Shows when category is selected */}
                 {selectedCategory === category && (
-                  <div className="mt-2 mb-2 space-y-3 pl-2">
+                  <div className="mt-2 mb-2 flex flex-wrap gap-3 pl-2">
                     {allComponents[selectedCategory as keyof typeof allComponents].map((component, index) => (
                       <div
                         key={index}
-                        className="border border-slate-200 dark:border-slate-700 rounded-lg p-3 hover:border-blue-400 dark:hover:border-blue-500 hover:shadow-md transition-all bg-white dark:bg-slate-800"
+                        className="border border-slate-200 dark:border-slate-700 rounded-lg p-3 hover:border-blue-400 dark:hover:border-blue-500 hover:shadow-md transition-all bg-white dark:bg-slate-800 flex-shrink-0"
+                        style={{ width: 'auto', minWidth: '200px', maxWidth: '300px' }}
                       >
                         <div className={`mb-3 flex items-center justify-center bg-slate-50 dark:bg-slate-700 rounded-lg overflow-hidden ${
                           selectedCategory === 'Headers' || selectedCategory === 'Footers'
